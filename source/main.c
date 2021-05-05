@@ -76,7 +76,7 @@ static Result fetch_io_regs(void)
 
 int main(int argc, char **argv)
 {
-    u32 payload_buf[0x1ED58 / 4]; //max size for RCM payloads is 0x1ED58
+    u32 payload_buf[0x28000 / 4]; //max size for nereba payloads is 0x28000.
     mkdir("sdmc:/nereba", ACCESSPERMS);
     FILE *log_f = fopen("sdmc:/nereba/nereba.log", "w");
 
@@ -114,6 +114,13 @@ int main(int argc, char **argv)
         fatalSimple(MAKERESULT(MODULE_NEREBA, 4));
     }
 
+    if(file_stat.st_size > 0x28000)
+    {
+        fprintf(log_f, "Payload size too big!\nMake sure nereba.bin does not exceed 160 KiB!\n");
+        fclose(log_f);
+        fatalSimple(MAKERESULT(MODULE_NEREBA, 6));
+    }
+
     FILE *payload_f = fopen("sdmc:/nereba/nereba.bin", "rb");
     if(!payload_f)
     {
@@ -131,6 +138,27 @@ int main(int argc, char **argv)
     {
         u32 tmp = payload_buf[i];
         *IRAM(0x40010000 + i * 4) = tmp;
+    }
+
+    /* Copy leftover bytes */
+    u32 leftover = file_stat.st_size % 4;
+    if (leftover)
+    {
+        int offset_idx = file_stat.st_size / 4;
+        u32 tmp = payload_buf[offset_idx];
+        switch (leftover)
+        {
+        case 1:
+            tmp &= 0xFF;
+            break;
+        case 2:
+            tmp &= 0xFFFF;
+            break;
+        case 3:
+            tmp &= 0xFFFFFF;
+            break;
+        }
+        *IRAM(0x40010000 + offset_idx * 4) = tmp;
     }
 
     fprintf(log_f, "Writing scratch regs...\n");
